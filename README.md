@@ -4,9 +4,15 @@ Scripts to reproduce kubelet metrics endpoint failures when AKS nodes experience
 
 ## Problem
 
-When AKS nodes have CPU spikes, the kubelet metrics endpoint (`https://<node-ip>:10250/metrics/resource`) stops responding, causing:
-- HPA/VPA to stop working
-- Cluster autoscaler to fail adding nodes
+When AKS nodes have CPU spikes, the kubelet metrics endpoint (`https://<node-ip>:10250/metrics/resource`) stops responding. This triggers a cascading failure:
+
+1. **Metrics-server fails** - Cannot scrape kubelet metrics (timeout after 10s)
+2. **HPA/VPA stop working** - No metrics data means no scaling decisions
+3. **Pods remain pending** - HPA/VPA cannot scale up existing deployments
+4. **Cluster autoscaler stuck** - Relies on pending pods as signal to add nodes, but without HPA/VPA creating pending pods, no new nodes are provisioned
+5. **Workloads fail** - System cannot scale to meet demand
+
+The issue is that metrics loss prevents the entire autoscaling chain from functioning.
 
 ## Prerequisites
 
@@ -25,7 +31,11 @@ When AKS nodes have CPU spikes, the kubelet metrics endpoint (`https://<node-ip>
 ### Terminal 1: Start Monitoring
 
 ```powershell
+# Monitor with default 10s timeout
 .\aks-monitor-metrics.ps1 -Node "aks-nodepool-vmss000000"
+
+# Or use shorter timeout to detect issues faster
+.\aks-monitor-metrics.ps1 -Node "aks-nodepool-vmss000000" -TimeoutSeconds 5
 ```
 
 Monitor output shows:
@@ -75,10 +85,3 @@ Monitor output shows:
 
 **Stress**: Pods scheduled to target node run PowerShell CPU-intensive loops for specified duration, then exit.
 
-## Notes
-
-- Monitor pod streams output via `kubectl logs -f` (Ctrl+C to stop streaming)
-- Stress pods use PowerShell cross-platform image (works on Linux/Windows)
-- Each stress pod = 1 CPU thread
-- Pods auto-exit after duration
-- Response times increase before timeout occurs
