@@ -66,11 +66,8 @@ spec:
       Write-Host "Completed"
     resources:
       requests:
-        cpu: "200m"
+        cpu: "50m"
         memory: "256Mi"
-      limits:
-        cpu: "2000m"
-        memory: "512Mi"
 "@
     
     $podYaml | kubectl apply -f -
